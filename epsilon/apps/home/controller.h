@@ -44,7 +44,6 @@ class Controller : public Escher::ViewController,
   void handleResponderChainEvent(ResponderChainEvent event) override;
 
  private:
-  // SimpleTableViewDataSource
   KDCoordinate defaultRowHeight() override { return k_cellHeight; }
   KDCoordinate defaultColumnWidth() override { return k_cellWidth; }
 
@@ -54,7 +53,6 @@ class Controller : public Escher::ViewController,
   bool appIsForbidden(I18n::Message appName) const;
   I18n::Message forbiddenAppMessage() const;
 
-  // Conversion index <--> column/row
   int columnOfIconAtIndex(int iconIndex) const {
     return iconIndex % k_numberOfColumns;
   }
@@ -73,23 +71,26 @@ class Controller : public Escher::ViewController,
    public:
     ContentView(Controller* controller,
                 Escher::SelectableTableViewDataSource* selectionDataSource);
-    Escher::SelectableTableView* selectableTableView();
-    void drawRect(KDContext* ctx, KDRect rect) const override {
-      ctx->fillRect(bounds(), Escher::ColorPicker::Resolve(
-                                  Escher::ThemeComponent::DefaultBackground));
-    }
+    SelectableTableView* selectableTableView();
+    void drawRect(KDContext* ctx, KDRect rect) const override;
     void reload() { markWholeFrameAsDirty(); }
     void reloadBottomRow(SimpleTableViewDataSource* dataSource,
                          int lastIconColumn);
+    void setThemeIndex(int themeIndex) {
+      m_themeIndex = themeIndex;
+      reload();
+    }
+    int themeIndex() const { return m_themeIndex; }
 
    private:
     int numberOfSubviews() const override { return 1; }
     View* subviewAtIndex(int index) override;
     void layoutSubviews(bool force = false) override;
     Escher::SelectableTableView m_selectableTableView;
+    int m_themeIndex = 0;
   };
   constexpr static KDMargins k_margins = {4, 4, 0, 0};
-  constexpr static KDCoordinate k_bottomMargin = 14;
+  constexpr static KDCoordinate k_bottomMargin = 16;
   constexpr static KDCoordinate k_indicatorMargin = 61;
   constexpr static int k_numberOfColumns = 3;
   constexpr static int k_numberOfReusableCells = 6;
@@ -97,6 +98,7 @@ class Controller : public Escher::ViewController,
   constexpr static int k_cellWidth = 104;
   ContentView m_view;
   AppCell m_reusableCells[k_numberOfReusableCells];
+  int m_themeIndex = 0;
 };
 
 }  // namespace Home
