@@ -17,13 +17,31 @@ using namespace Poincare;
 
 namespace Home {
 
+namespace {
+
+struct NexusTheme {
+  const char* label;
+  KDColor background;
+  KDColor accent;
+};
+
+constexpr NexusTheme k_themes[] = {
+    {"NEXUS // CYAN", KDColor::RGB24(0x0B1020), KDColor::RGB24(0x00F0FF)},
+    {"NEXUS // NEON", KDColor::RGB24(0x140B24), KDColor::RGB24(0xFF2A85)},
+    {"NEXUS // EMERALD", KDColor::RGB24(0x081814), KDColor::RGB24(0x00E676)},
+};
+
+constexpr int k_numThemes = sizeof(k_themes) / sizeof(k_themes[0]);
+
+}  // namespace
+
 Controller::ContentView::ContentView(
     Controller* controller, SelectableTableViewDataSource* selectionDataSource)
     : m_selectableTableView(controller, controller, selectionDataSource,
                             controller) {
   m_selectableTableView.setVerticalCellOverlap(0);
   m_selectableTableView.setMargins(k_margins);
-  m_selectableTableView.setBackgroundColor(ThemeComponent::DefaultBackground);
+  m_selectableTableView.setBackgroundColor(k_themes[0].background);
   m_selectableTableView.decorator()->setVerticalMargins(
       {k_indicatorMargin, k_indicatorMargin - k_bottomMargin});
 }
@@ -32,9 +50,23 @@ SelectableTableView* Controller::ContentView::selectableTableView() {
   return &m_selectableTableView;
 }
 
+void Controller::ContentView::drawRect(KDContext* ctx, KDRect rect) const {
+  const NexusTheme& theme = k_themes[m_themeIndex % k_numThemes];
+  ctx->fillRect(bounds(), theme.background);
+
+  // Bandeau NEXUS OS en bas de l'ecran
+  KDCoordinate barY = bounds().height() - k_bottomMargin;
+  ctx->fillRect(KDRect(0, barY, bounds().width(), 2), theme.accent);
+  ctx->fillRect(KDRect(0, barY + 2, bounds().width(), k_bottomMargin - 2),
+                KDColor::RGB24(0x111827));
+  ctx->drawString(theme.label, KDPoint(8, barY + 3), KDFont::Size::Small,
+                  theme.accent, KDColor::RGB24(0x111827));
+  ctx->drawString("[TOOLBOX: THEME]", KDPoint(185, barY + 3),
+                  KDFont::Size::Small, KDColorWhite, KDColor::RGB24(0x111827));
+}
+
 void Controller::ContentView::reloadBottomRow(
     SimpleTableViewDataSource* dataSource, int lastIconColumn) {
-  /* We mark the missing icons on the last row as dirty. */
   for (int i = lastIconColumn + 1; i < dataSource->numberOfColumns(); i++) {
     markRectAsDirty(KDRect(dataSource->columnWidth(0) * i,
                            dataSource->rowHeight(0), dataSource->columnWidth(0),
@@ -48,11 +80,6 @@ View* Controller::ContentView::subviewAtIndex(int index) {
 }
 
 void Controller::ContentView::layoutSubviews(bool force) {
-  /* Selectable table view's bottom margin is used for vertical scroll: we
-   * scroll to the selected cell's farthest pixel + bottom margin. For home app,
-   * instead of having a bottom margin, we reduce the frame of the selectable
-   * table view and ContentView::drawRect will take care of drawing the white
-   * pixels at the bottom of the screen. */
   KDRect frame =
       KDRect(KDPointZero, bounds().width(), bounds().height() - k_bottomMargin);
   setChildFrame(&m_selectableTableView, frame, force);
@@ -63,6 +90,13 @@ Controller::Controller(Responder* parentResponder,
     : ViewController(parentResponder), m_view(this, selectionDataSource) {}
 
 bool Controller::handleEvent(Ion::Events::Event event) {
+  if (event == Ion::Events::Toolbox) {
+    m_themeIndex = (m_themeIndex + 1) % k_numThemes;
+    const NexusTheme& theme = k_themes[m_themeIndex];
+    m_view.selectableTableView()->setBackgroundColor(theme.background);
+    m_view.setThemeIndex(m_themeIndex);
+    return true;
+  }
   if (event == Ion::Events::OK || event == Ion::Events::EXE) {
     switchToSelectedApp();
     return true;
@@ -82,13 +116,11 @@ bool Controller::handleEvent(Ion::Events::Event event) {
         k_numberOfColumns - 1, selectionDataSource()->selectedRow() - 1);
     return true;
   }
-  // Handle keys from 0 to 9
   const char* eventTextPtr = event.text();
   if (eventTextPtr != nullptr && eventTextPtr[0] != 0 && eventTextPtr[1] == 0 &&
       eventTextPtr[0] >= '0' && eventTextPtr[0] <= '9') {
     int iconIndex;
     if (eventTextPtr[0] == '0') {
-      // Settings app is the last visible builtin app
       iconIndex = numberOfIcons() - 1 -
                   AppsContainer::sharedAppsContainer()->numberOfExternalApps();
     } else {
@@ -101,17 +133,14 @@ bool Controller::handleEvent(Ion::Events::Event event) {
     int row = rowOfIconAtIndex(iconIndex);
     if (col == m_view.selectableTableView()->selectedColumn() &&
         row == m_view.selectableTableView()->selectedRow()) {
-      // We were already on the selected app
       switchToSelectedApp();
       return true;
     }
     m_view.selectableTableView()->selectCellAtLocation(col, row);
     return true;
   }
-  // Handle Down when less than 3 icons at last row
   if (event == Ion::Events::Down &&
       selectionDataSource()->selectedRow() == numberOfRows() - 2) {
-    // Otherwise would have been handled by SelectableTableView
     assert(selectionDataSource()->selectedColumn() > columnOfLastIcon());
     m_view.selectableTableView()->selectCellAtLocation(columnOfLastIcon(),
                                                        numberOfRows() - 1);
@@ -167,12 +196,6 @@ void Controller::tableViewDidChangeSelectionAndDidScroll(
     SelectableTableView* t, int previousSelectedCol, int previousSelectedRow,
     KDPoint previousOffset, bool withinTemporarySelection) {
   assert(t == m_view.selectableTableView());
-  /* If the number of icons is != 3*n, when we display the lowest row, no icons
-   * are redrawn on the last cells, so the cells are not cleaned. We need to
-   * redraw a white rect on these cells to hide the leftover icons. Ideally, we
-   * would have redrawn all the background in white and then redraw visible
-   * cells. However, the redrawing takes time and is visible at scrolling. Here,
-   * we avoid the background complete redrawing but the code is a bit clumsy. */
   if (!withinTemporarySelection && t->selectedRow() == numberOfRows() - 1) {
     m_view.reloadBottomRow(this, columnOfLastIcon());
   }
