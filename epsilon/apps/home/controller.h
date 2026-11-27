@@ -8,6 +8,7 @@
 #include <escher/view_controller.h>
 
 #include "app_cell.h"
+#include "ps5_view.h"
 
 namespace Home {
 
@@ -50,6 +51,7 @@ class Controller : public Escher::ViewController,
   int numberOfIcons() const;
   Escher::SelectableTableViewDataSource* selectionDataSource() const;
   void switchToSelectedApp();
+  void syncPS5View();
   bool appIsForbidden(I18n::Message appName) const;
   I18n::Message forbiddenAppMessage() const;
 
@@ -72,6 +74,7 @@ class Controller : public Escher::ViewController,
     ContentView(Controller* controller,
                 Escher::SelectableTableViewDataSource* selectionDataSource);
     SelectableTableView* selectableTableView();
+    PS5View* ps5View() { return &m_ps5View; }
     void drawRect(KDContext* ctx, KDRect rect) const override;
     void reload() { markWholeFrameAsDirty(); }
     void reloadBottomRow(SimpleTableViewDataSource* dataSource,
@@ -83,9 +86,10 @@ class Controller : public Escher::ViewController,
     int themeIndex() const { return m_themeIndex; }
 
    private:
-    int numberOfSubviews() const override { return 1; }
+    int numberOfSubviews() const override;
     View* subviewAtIndex(int index) override;
     void layoutSubviews(bool force = false) override;
+    PS5View m_ps5View;
     Escher::SelectableTableView m_selectableTableView;
     int m_themeIndex = 0;
   };
@@ -99,6 +103,7 @@ class Controller : public Escher::ViewController,
   ContentView m_view;
   AppCell m_reusableCells[k_numberOfReusableCells];
   int m_themeIndex = 0;
+  int m_ps5SelectedIndex = 0;
 };
 
 }  // namespace Home
