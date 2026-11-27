@@ -8,7 +8,7 @@ on:
 
 env:
   MAKEFLAGS: -j2
-  BETA: ${{ fromJSON(github.event.inputs.beta) && '.beta' || ''  }}
+  BETA: ${{ fromJSON(github.event.inputs.beta) && '.beta' || '' }}
 
 jobs:
   build:
@@ -22,16 +22,11 @@ jobs:
         uses: ./.github/actions/docker-builder
         with:
           platform: device
-      # Not using matrix strategy to avoid multiplying setups and uploads.
-      - name: Build n0110
-        run: $DOCKER_RUN "make PLATFORM=n0110 epsilon_userland.A.onboarding$BETA.dfu epsilon_userland.A.onboarding$BETA.allow3rdparty.dfu"
-      - name: Build n0115
-        run: $DOCKER_RUN "make PLATFORM=n0115 epsilon_userland.A.onboarding$BETA.dfu epsilon_userland.A.onboarding$BETA.allow3rdparty.dfu"
       - name: Build n0120
-        run: $DOCKER_RUN "make PLATFORM=n0120 epsilon_userland.A.onboarding$BETA.dfu epsilon_userland.A.onboarding$BETA.allow3rdparty.dfu"
+        run: $DOCKER_RUN "make PLATFORM=n0120 epsilon_userland.dfu"
       - name: Upload
         uses: actions/upload-artifact@v6
         with:
           name: unsigned-device-builds
-          path: epsilon/output/release/*/epsilon*dfu
+          path: epsilon/output/**/*.dfu
           retention-days: 3
