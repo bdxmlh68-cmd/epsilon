@@ -19,6 +19,8 @@ namespace Home {
 
 namespace {
 
+constexpr int k_maxApps = 32;
+
 struct NexusTheme {
   const char* label;
   KDColor background;
@@ -26,12 +28,26 @@ struct NexusTheme {
 };
 
 constexpr NexusTheme k_themes[] = {
+    {"NOVA // PS5", KDColor::RGB24(0x081E4D), KDColor::RGB24(0x0070D1)},
     {"NEXUS // CYAN", KDColor::RGB24(0x0B1020), KDColor::RGB24(0x00F0FF)},
     {"NEXUS // NEON", KDColor::RGB24(0x140B24), KDColor::RGB24(0xFF2A85)},
-    {"NEXUS // EMERALD", KDColor::RGB24(0x081814), KDColor::RGB24(0x00E676)},
 };
 
 constexpr int k_numThemes = sizeof(k_themes) / sizeof(k_themes[0]);
+
+const char* appNameAtIndex(int appIdx) {
+  AppsContainer* container = AppsContainer::sharedAppsContainer();
+  if (appIdx < container->numberOfBuiltinApps()) {
+    I18n::Message msg =
+        container->appSnapshotAtIndex(appIdx)->descriptor()->name();
+    return I18n::translate(msg);
+  }
+  int extIdx = appIdx - container->numberOfBuiltinApps();
+  if (extIdx >= 0 && extIdx < container->numberOfExternalApps()) {
+    return container->externalAppAtIndex(extIdx).name();
+  }
+  return "App";
+}
 
 }  // namespace
 
@@ -54,7 +70,6 @@ void Controller::ContentView::drawRect(KDContext* ctx, KDRect rect) const {
   const NexusTheme& theme = k_themes[m_themeIndex % k_numThemes];
   ctx->fillRect(bounds(), theme.background);
 
-  // Bandeau NEXUS OS en bas de l'ecran
   KDCoordinate barY = bounds().height() - k_bottomMargin;
   ctx->fillRect(KDRect(0, barY, bounds().width(), 2), theme.accent);
   ctx->fillRect(KDRect(0, barY + 2, bounds().width(), k_bottomMargin - 2),
@@ -74,22 +89,51 @@ void Controller::ContentView::reloadBottomRow(
   }
 }
 
+int Controller::ContentView::numberOfSubviews() const { return 2; }
+
 View* Controller::ContentView::subviewAtIndex(int index) {
-  assert(index == 0);
+  assert(0 <= index && index < 2);
+  if (index == 0) {
+    return &m_ps5View;
+  }
   return &m_selectableTableView;
 }
 
 void Controller::ContentView::layoutSubviews(bool force) {
   KDRect frame =
       KDRect(KDPointZero, bounds().width(), bounds().height() - k_bottomMargin);
-  setChildFrame(&m_selectableTableView, frame, force);
+  setChildFrame(&m_ps5View, frame, force);
+  setChildFrame(&m_selectableTableView, KDRectZero, force);
 }
 
 Controller::Controller(Responder* parentResponder,
                        SelectableTableViewDataSource* selectionDataSource)
     : ViewController(parentResponder), m_view(this, selectionDataSource) {}
 
+void Controller::syncPS5View() {
+  static const char* s_names[k_maxApps];
+  AppsContainer* container = AppsContainer::sharedAppsContainer();
+  int total = container->numberOfApps();
+  if (total > k_maxApps) {
+    total = k_maxApps;
+  }
+  for (int i = 0; i < total; i++) {
+    s_names[i] = appNameAtIndex(i);
+  }
+  m_view.ps5View()->setApps(total, s_names);
+  m_view.ps5View()->setSelected(m_ps5SelectedIndex);
+}
+
 bool Controller::handleEvent(Ion::Events::Event event) {
+  AppsContainer* container = AppsContainer::sharedAppsContainer();
+  int total = container->numberOfApps();
+  if (total <= 0) {
+    return false;
+  }
+  if (m_ps5SelectedIndex >= total) {
+    m_ps5SelectedIndex = 0;
+  }
+
   if (event == Ion::Events::Toolbox) {
     m_themeIndex = (m_themeIndex + 1) % k_numThemes;
     const NexusTheme& theme = k_themes[m_themeIndex];
@@ -102,48 +146,33 @@ bool Controller::handleEvent(Ion::Events::Event event) {
     return true;
   }
   if (event == Ion::Events::Home || event == Ion::Events::Back) {
-    m_view.selectableTableView()->selectCellAtLocation(0, 0);
+    m_ps5SelectedIndex = 0;
+    m_view.ps5View()->setSelected(0);
     return true;
   }
-  if (event == Ion::Events::Right &&
-      selectionDataSource()->selectedRow() < numberOfRows() - 1) {
-    m_view.selectableTableView()->selectCellAtLocation(
-        0, selectionDataSource()->selectedRow() + 1);
+  if (event == Ion::Events::Right) {
+    m_ps5SelectedIndex = (m_ps5SelectedIndex + 1) % total;
+    m_view.ps5View()->setSelected(m_ps5SelectedIndex);
     return true;
   }
-  if (event == Ion::Events::Left && selectionDataSource()->selectedRow() > 0) {
-    m_view.selectableTableView()->selectCellAtLocation(
-        k_numberOfColumns - 1, selectionDataSource()->selectedRow() - 1);
+  if (event == Ion::Events::Left) {
+    m_ps5SelectedIndex = (m_ps5SelectedIndex - 1 + total) % total;
+    m_view.ps5View()->setSelected(m_ps5SelectedIndex);
     return true;
   }
   const char* eventTextPtr = event.text();
   if (eventTextPtr != nullptr && eventTextPtr[0] != 0 && eventTextPtr[1] == 0 &&
       eventTextPtr[0] >= '0' && eventTextPtr[0] <= '9') {
-    int iconIndex;
-    if (eventTextPtr[0] == '0') {
-      iconIndex = numberOfIcons() - 1 -
-                  AppsContainer::sharedAppsContainer()->numberOfExternalApps();
-    } else {
-      iconIndex = eventTextPtr[0] - '1';
-    }
-    if (iconIndex >= AppsContainer::sharedAppsContainer()->numberOfApps()) {
+    int iconIndex = (eventTextPtr[0] == '0') ? (total - 1) : (eventTextPtr[0] - '1');
+    if (iconIndex < 0 || iconIndex >= total) {
       return false;
     }
-    int col = columnOfIconAtIndex(iconIndex);
-    int row = rowOfIconAtIndex(iconIndex);
-    if (col == m_view.selectableTableView()->selectedColumn() &&
-        row == m_view.selectableTableView()->selectedRow()) {
+    if (iconIndex == m_ps5SelectedIndex) {
       switchToSelectedApp();
       return true;
     }
-    m_view.selectableTableView()->selectCellAtLocation(col, row);
-    return true;
-  }
-  if (event == Ion::Events::Down &&
-      selectionDataSource()->selectedRow() == numberOfRows() - 2) {
-    assert(selectionDataSource()->selectedColumn() > columnOfLastIcon());
-    m_view.selectableTableView()->selectCellAtLocation(columnOfLastIcon(),
-                                                       numberOfRows() - 1);
+    m_ps5SelectedIndex = iconIndex;
+    m_view.ps5View()->setSelected(m_ps5SelectedIndex);
     return true;
   }
   return false;
@@ -151,10 +180,8 @@ bool Controller::handleEvent(Ion::Events::Event event) {
 
 void Controller::handleResponderChainEvent(ResponderChainEvent event) {
   if (event.type == ResponderChainEventType::HasBecomeFirst) {
-    if (selectionDataSource()->selectedRow() == -1) {
-      selectionDataSource()->selectCellAtLocation(0, 0);
-    }
-    App::app()->setFirstResponder(m_view.selectableTableView());
+    syncPS5View();
+    App::app()->setFirstResponder(this);
   } else {
     ViewController::handleResponderChainEvent(event);
   }
@@ -207,8 +234,7 @@ SelectableTableViewDataSource* Controller::selectionDataSource() const {
 
 void Controller::switchToSelectedApp() {
   AppsContainer* container = AppsContainer::sharedAppsContainer();
-  int appIdx = indexOfAppAtColumnAndRow(selectionDataSource()->selectedColumn(),
-                                        selectionDataSource()->selectedRow());
+  int appIdx = m_ps5SelectedIndex;
   if (appIdx < container->numberOfBuiltinApps()) {
     ::App::Snapshot* selectedSnapshot =
         container->appSnapshotAtIndex(PermutedAppSnapshotIndex(appIdx));
